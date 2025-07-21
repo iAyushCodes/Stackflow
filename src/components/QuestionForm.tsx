@@ -1,3 +1,4 @@
+/* eslint-disable react/no-unescaped-entities */
 "use client";
 
 import RTE from "@/components/RTE";
@@ -35,11 +36,6 @@ const LabelInputContainer = ({
     );
 };
 
-/**
- * ******************************************************************************
-
- * ******************************************************************************
- */
 const QuestionForm = ({ question }: { question?: Models.Document }) => {
     const { user } = useAuthStore();
     const [tag, setTag] = React.useState("");
@@ -56,8 +52,21 @@ const QuestionForm = ({ question }: { question?: Models.Document }) => {
     const [loading, setLoading] = React.useState(false);
     const [error, setError] = React.useState("");
 
+    // Debug function to check state
+    const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        console.log('Title input value:', value); // Debug log
+        setFormData(prev => ({ ...prev, title: value }));
+    };
+
+    const handleTagChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        console.log('Tag input value:', value); // Debug log
+        setTag(value);
+    };
+
     const loadConfetti = (timeInMS = 3000) => {
-        const end = Date.now() + timeInMS; // 3 seconds
+        const end = Date.now() + timeInMS;
         const colors = ["#a786ff", "#fd8bbc", "#eca184", "#f8deb1"];
 
         const frame = () => {
@@ -87,76 +96,99 @@ const QuestionForm = ({ question }: { question?: Models.Document }) => {
     };
 
     const create = async () => {
+        const currentUserId = user?.$id;
         if (!formData.attachment) throw new Error("Please upload an image");
-
+    
         const storageResponse = await storage.createFile(
             questionAttachmentBucket,
             ID.unique(),
             formData.attachment
         );
-
+    
         const response = await databases.createDocument(db, questionCollection, ID.unique(), {
             title: formData.title,
             content: formData.content,
-            authorId: formData.authorId,
+            authorId: currentUserId, // Use current user ID instead of formData.authorId
             tags: Array.from(formData.tags),
             attachmentId: storageResponse.$id,
         });
-
+    
         loadConfetti();
-
         return response;
     };
 
     const update = async () => {
+        const currentUserId = user?.$id;
         if (!question) throw new Error("Please provide a question");
-
+    
         const attachmentId = await (async () => {
             if (!formData.attachment) return question?.attachmentId as string;
-
+    
             await storage.deleteFile(questionAttachmentBucket, question.attachmentId);
-
+    
             const file = await storage.createFile(
                 questionAttachmentBucket,
                 ID.unique(),
                 formData.attachment
             );
-
+    
             return file.$id;
         })();
-
+    
         const response = await databases.updateDocument(db, questionCollection, question.$id, {
             title: formData.title,
             content: formData.content,
-            authorId: formData.authorId,
+            authorId: currentUserId, // Use current user ID instead of formData.authorId
             tags: Array.from(formData.tags),
             attachmentId: attachmentId,
         });
-
+    
         return response;
     };
 
     const submit = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
-
-        // didn't check for attachment because it's optional in updating
-        if (!formData.title || !formData.content || !formData.authorId) {
-            setError(() => "Please fill out all fields");
+    
+        // Get current user ID (in case it wasn't available during initial state)
+        const currentUserId = user?.$id;
+    
+        // Debug logging to see what's actually being checked
+        console.log('Validation check:', {
+            title: formData.title,
+            content: formData.content,
+            authorId: currentUserId,
+            titleLength: formData.title.length,
+            contentLength: formData.content.length,
+            hasAuthorId: !!currentUserId
+        });
+    
+        if (!formData.title.trim() || !formData.content.trim() || !currentUserId) {
+            const missingFields = [];
+            if (!formData.title.trim()) missingFields.push('title');
+            if (!formData.content.trim()) missingFields.push('content');
+            if (!currentUserId) missingFields.push('user authentication');
+            
+            setError(`Please fill out the following fields: ${missingFields.join(', ')}`);
             return;
         }
-
-        setLoading(() => true);
-        setError(() => "");
-
+    
+        setLoading(true);
+        setError("");
+    
         try {
+            // Update formData with current user ID if it wasn't set initially
+            const dataToSubmit = {
+                ...formData,
+                authorId: currentUserId
+            };
+    
             const response = question ? await update() : await create();
-
             router.push(`/questions/${response.$id}/${slugify(formData.title)}`);
         } catch (error: any) {
-            setError(() => error.message);
+            setError(error.message);
         }
-
-        setLoading(() => false);
+    
+        setLoading(false);
     };
 
     return (
@@ -168,11 +200,12 @@ const QuestionForm = ({ question }: { question?: Models.Document }) => {
                     </div>
                 </LabelInputContainer>
             )}
+            
             <LabelInputContainer>
-                <Label htmlFor="title">
+                <Label htmlFor="title" className="text-white">
                     Title Address
                     <br />
-                    <small>
+                    <small className="text-gray-300">
                         Be specific and imagine you&apos;re asking a question to another person.
                     </small>
                 </Label>
@@ -182,14 +215,21 @@ const QuestionForm = ({ question }: { question?: Models.Document }) => {
                     placeholder="e.g. Is there an R function for finding the index of an element in a vector?"
                     type="text"
                     value={formData.title}
-                    onChange={e => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                    onChange={handleTitleChange}
+                    className="text-white bg-slate-800/50 border-slate-600 placeholder:text-gray-400 focus:border-orange-500 focus:ring-orange-500"
+                    style={{ color: 'white' }} // Force white text color
                 />
+                {/* Debug display */}
+                <div className="text-xs text-gray-400 mt-1">
+                    Current value: "{formData.title}"
+                </div>
             </LabelInputContainer>
+
             <LabelInputContainer>
-                <Label htmlFor="content">
+                <Label htmlFor="content" className="text-white">
                     What are the details of your problem?
                     <br />
-                    <small>
+                    <small className="text-gray-300">
                         Introduce the problem and expand on what you put in the title. Minimum 20
                         characters.
                     </small>
@@ -199,11 +239,12 @@ const QuestionForm = ({ question }: { question?: Models.Document }) => {
                     onChange={value => setFormData(prev => ({ ...prev, content: value || "" }))}
                 />
             </LabelInputContainer>
+
             <LabelInputContainer>
-                <Label htmlFor="image">
+                <Label htmlFor="image" className="text-white">
                     Image
                     <br />
-                    <small>
+                    <small className="text-gray-300">
                         Add image to your question to make it more clear and easier to understand.
                     </small>
                 </Label>
@@ -211,7 +252,6 @@ const QuestionForm = ({ question }: { question?: Models.Document }) => {
                     id="image"
                     name="image"
                     accept="image/*"
-                    placeholder="e.g. Is there an R function for finding the index of an element in a vector?"
                     type="file"
                     onChange={e => {
                         const files = e.target.files;
@@ -221,13 +261,15 @@ const QuestionForm = ({ question }: { question?: Models.Document }) => {
                             attachment: files[0],
                         }));
                     }}
+                    className="text-white bg-slate-800/50 border-slate-600 file:text-white file:bg-slate-700"
                 />
             </LabelInputContainer>
+
             <LabelInputContainer>
-                <Label htmlFor="tag">
+                <Label htmlFor="tag" className="text-white">
                     Tags
                     <br />
-                    <small>
+                    <small className="text-gray-300">
                         Add tags to describe what your question is about. Start typing to see
                         suggestions.
                     </small>
@@ -240,8 +282,14 @@ const QuestionForm = ({ question }: { question?: Models.Document }) => {
                             placeholder="e.g. (java c objective-c)"
                             type="text"
                             value={tag}
-                            onChange={e => setTag(() => e.target.value)}
+                            onChange={handleTagChange}
+                            className="text-white bg-slate-800/50 border-slate-600 placeholder:text-gray-400 focus:border-orange-500 focus:ring-orange-500"
+                            style={{ color: 'white' }} // Force white text color
                         />
+                        {/* Debug display */}
+                        <div className="text-xs text-gray-400 mt-1">
+                            Current tag: "{tag}"
+                        </div>
                     </div>
                     <button
                         className="relative shrink-0 rounded-full border border-slate-600 bg-slate-700 px-8 py-2 text-sm text-white transition duration-200 hover:shadow-2xl hover:shadow-white/[0.1]"
@@ -252,13 +300,14 @@ const QuestionForm = ({ question }: { question?: Models.Document }) => {
                                 ...prev,
                                 tags: new Set([...Array.from(prev.tags), tag]),
                             }));
-                            setTag(() => "");
+                            setTag("");
                         }}
                     >
                         <div className="absolute inset-x-0 -top-px mx-auto h-px w-1/2 bg-gradient-to-r from-transparent via-teal-500 to-transparent shadow-2xl" />
                         <span className="relative z-20">Add</span>
                     </button>
                 </div>
+
                 <div className="flex flex-wrap gap-2">
                     {Array.from(formData.tags).map((tag, index) => (
                         <div key={index} className="flex items-center gap-2">
@@ -288,6 +337,7 @@ const QuestionForm = ({ question }: { question?: Models.Document }) => {
                     ))}
                 </div>
             </LabelInputContainer>
+
             <button
                 className="inline-flex h-12 animate-shimmer items-center justify-center rounded-md border border-slate-800 bg-[linear-gradient(110deg,#000103,45%,#1e2631,55%,#000103)] bg-[length:200%_100%] px-6 font-medium text-slate-400 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 focus:ring-offset-slate-50"
                 type="submit"
